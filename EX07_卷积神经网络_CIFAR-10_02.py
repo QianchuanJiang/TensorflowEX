@@ -37,11 +37,28 @@ X_test = test['data'][:5000, :]
 y_test = onehot(test['labels'])[:5000, :]
 print(X_test.shape)
 
+def batch_normal(xs, out_size):
+    axis = list(range(len(xs.get_shape()) - 1))
+    n_mean, n_var = tf.nn.moments(xs, axes=axis)
+    scale = tf.Variable(tf.ones([out_size]))
+    shift = tf.Variable(tf.zeros([out_size]))
+    epsilon = 0.001
+    ema = tf.train.ExponentialMovingAverage(decay=0.9)
+
+    def mean_var_with_update():
+        ema_apply_op = ema.apply([n_mean, n_var])
+        with tf.control_dependencies([ema_apply_op]):
+            return tf.identity(n_mean), tf.identity(n_var)
+
+    mean, var = mean_var_with_update()
+
+    bn = tf.nn.batch_normalization(xs, mean, var, shift, scale, epsilon)
+    return bn
+
 # 创建神经网络模型；构建模型参数；
-learning_rate = 0.003
 training_iters = 200
 batch_size = 1000
-display_step = 40
+display_step = 150
 # 单个样本大小，图片为32x32像素，彩色3通道的图片，所以32x32x3=3072
 n_features = 3072
 # 标签种数；
@@ -92,14 +109,19 @@ pool2 = tf.nn.avg_pool(norm2, ksize=[1, 3, 3, 1], strides=[1, 2, 2, 1], padding=
 reshape = tf.reshape(pool2, [-1, 8*8*64])
 # 构建全连接层_1;
 fc1 = tf.add(tf.matmul(reshape, W_conv['fc1']), b_conv['fc1'])
-fc1 = tf.nn.relu(fc1)
+nfc1 = batch_normal(fc1, n_fc1)
+fcr1 = tf.nn.relu(nfc1)
 # 构建全连接层_2;
-fc2 = tf.add(tf.matmul(fc1, W_conv['fc2']), b_conv['fc2'])
-fc2 = tf.nn.relu(fc2)
+fc2 = tf.add(tf.matmul(fcr1, W_conv['fc2']), b_conv['fc2'])
+nfc2 = batch_normal(fc2, n_fc2)
+fcr2 = tf.nn.relu(nfc2)
 # 输出层（全连接_3）;
-fc3 = tf.nn.softmax(tf.add(tf.matmul(fc2, W_conv['fc3']), b_conv['fc3']))
+fc3 = tf.nn.softmax(tf.add(tf.matmul(fcr2, W_conv['fc3']), b_conv['fc3']))
 # 损失函数；用交叉熵的方式定义；
 loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=fc3, labels=y))
+# 定义指数下降学习率：
+global_step = tf.Variable(0)
+learning_rate = tf.train.exponential_decay(0.03, global_step, 20, 0.9, staircase=True)  # 生成学习率
 # 进入优化器，用梯度下降的方式；
 optimazer = tf.train.GradientDescentOptimizer(learning_rate=learning_rate).minimize(loss)
 
