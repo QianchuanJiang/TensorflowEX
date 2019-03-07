@@ -1,7 +1,9 @@
 # coding: utf-8
 import numpy as np
+import matplotlib.pyplot as plt
 import tensorflow as tf
 import time
+from CIFARreader import RotateImageFunc
 
 # 读取并载入训练数据集的方法；
 def unpickle(filename):
@@ -36,6 +38,7 @@ test = unpickle('cifar10-dataset/test_batch')
 X_test = test['data'][:5000, :]
 y_test = onehot(test['labels'])[:5000, :]
 print(X_test.shape)
+keepprob = 1.0
 
 def batch_normal(xs, out_size):
     axis = list(range(len(xs.get_shape()) - 1))
@@ -58,7 +61,6 @@ def batch_normal(xs, out_size):
 # 创建神经网络模型；构建模型参数；
 training_iters = 200
 batch_size = 1000
-display_step = 150
 # 单个样本大小，图片为32x32像素，彩色3通道的图片，所以32x32x3=3072
 n_features = 3072
 # 标签种数；
@@ -111,14 +113,16 @@ reshape = tf.reshape(pool2, [-1, 8*8*64])
 fc1 = tf.add(tf.matmul(reshape, W_conv['fc1']), b_conv['fc1'])
 nfc1 = batch_normal(fc1, n_fc1)
 fcr1 = tf.nn.relu(nfc1)
+dropout1 = tf.nn.dropout(fc1, keepprob)
 # 构建全连接层_2;
-fc2 = tf.add(tf.matmul(fcr1, W_conv['fc2']), b_conv['fc2'])
+fc2 = tf.add(tf.matmul(dropout1, W_conv['fc2']), b_conv['fc2'])
 nfc2 = batch_normal(fc2, n_fc2)
 fcr2 = tf.nn.relu(nfc2)
+dropout2 = tf.nn.dropout(fcr2, keepprob)
 # 输出层（全连接_3）;
-fc3 = tf.nn.softmax(tf.add(tf.matmul(fcr2, W_conv['fc3']), b_conv['fc3']))
+fc3 = tf.nn.softmax(tf.add(tf.matmul(dropout2, W_conv['fc3']), b_conv['fc3']))
 # 损失函数；用交叉熵的方式定义；
-loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=fc3, labels=y))
+loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(logits=fc3, labels=y))
 # 定义指数下降学习率：
 global_step = tf.Variable(0)
 learning_rate = tf.train.exponential_decay(0.03, global_step, 20, 0.9, staircase=True)  # 生成学习率
@@ -135,23 +139,41 @@ init = tf.global_variables_initializer()
 # 创建一个会话；
 with tf.Session() as sess:
     sess.run(init)
-    c = []
+    AC = []
+    COST = []
     total_batch = int(X_train.shape[0]/batch_size)
     print(total_batch)
-    for i in range(display_step):
+    for i in range(training_iters):
         acc_add = 0
         for bantch in range(total_batch):
         # for bantch in range(1):
             start_time = time.time()
             batch_x = X_train[bantch*batch_size: (bantch + 1)*batch_size, :]
             batch_y = y_train[bantch*batch_size: (bantch + 1)*batch_size, :]
-            a, b = sess.run([optimazer, loss], feed_dict={x: batch_x, y: batch_y})
+            batch_x_R = RotateImageFunc(batch_x)
+            a, b = sess.run([optimazer, loss], feed_dict={x: batch_x_R, y: batch_y})
             end_time = time.time()
             use_time = end_time - start_time
-            acc = sess.run(accuracy, feed_dict={x: batch_x, y: batch_y})
+            acc = sess.run(accuracy, feed_dict={x: batch_x_R, y: batch_y})
             acc_add = acc_add + acc
-            print(str(b) + "  训练批次：" + str(bantch) + "  训练时间：" + str(use_time) + "得分：" + str(acc))
+            AC.append(acc)
+            COST.append(b)
+            acc = acc*100
+            print("损失函数：" + str(b) + "  训练批次：第" + str(i) + "循环，第： " + str(bantch) + "批   训练时间：" + str(use_time) + " 准确率：" + str(acc) + "%")
         Main_Acc = acc_add/total_batch
-        print("--------------------------------------------------------------------------第" + str(i) + "轮" + "本轮得分：" + str(Main_Acc))
+        Main_Acc = Main_Acc*100
+        T = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(time.time()))
+        print("--------------------------------------------------------------------" + "时间：" + T + "第" + str(i) + "轮" + "本轮得分：" + str(Main_Acc) + "%")
     test_acc = sess.run(accuracy, feed_dict={x: X_test, y: y_test})
-    print("测试集得分：" + str(test_acc))
+    test_acc = test_acc*100
+    T = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(time.time()))
+    print("完成时间： " + T + "测试集得分：" + str(test_acc) + "%")
+
+# 画图；
+plt.plot(AC)
+plt.plot(COST)
+plt.xlabel('Iter')
+plt.ylabel('Cost')
+plt.title('Test_ACC: '+ str(test_acc) + '%')
+plt.tight_layout()
+plt.savefig('cnn-tf-cifar10-%s.png' % test_acc, dpi=1000)
