@@ -29,7 +29,7 @@ def RaadTrianData():
 
 test = unpickle('cifar10-dataset/test_batch')
 X_test = test['data'][:5000, :]
-# print(X_test.shape)
+print(X_test.shape)
 y_test = test['labels'][:5000]
 labelNames = {0: 'airplane',
               1: 'automobile',
@@ -114,6 +114,16 @@ def RotateImageFunc(imageList):
             rotate = imgRGB
         else:
             rotate = cv.flip(imgRGB, RotateV)
+            # 定义一个整形的随机数组，用来随机旋转角度；
+            RandVar = random.randrange(0, 18)
+            RotateVar = RandVar*20
+            # 图片旋转操作；
+            (h, w) = rotate.shape[:2]
+            # 获取图片中心坐标
+            center = (h // 2, w // 2)
+            # 定义一个旋转矩阵；
+            M = cv.getRotationMatrix2D(center=center, angle=RotateVar, scale=1)
+            rotate = cv.warpAffine(rotate, M, (h, w))
         # imageName = "Images/RotateImage" + str(i) + ".jpg"
         # cv.imwrite(imageName, rotate)
         rotateImg[i, :] = ReadImage(rotate)
@@ -132,5 +142,7 @@ def DrawImage(a, c):
 
 
 if __name__ == '__main__':
-    DrawImage([9.85, 12.55, 15.65, 23.688, 25.698, 30.569, 30.985, 29.68545654, 33.56897, 38.546, 40.5896], [2.85, 2.55, 2.65, 2.688, 2.698])
+    test = unpickle('cifar10-dataset/test_batch')
+    X_test = test['data'][:5000, :]
+    RotateImageFunc(X_test)
     pass
